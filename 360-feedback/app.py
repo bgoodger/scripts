@@ -35,6 +35,52 @@ db.init_db()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+# Simple in-process caches to avoid repeated API calls for the same IDs.
+_user_internal_cache: dict[str, bool] = {}
+_channel_internal_cache: dict[str, bool] = {}
+
+
+def _is_internal_user(client, user_id: str) -> bool:
+    """Return True only if the user belongs to this workspace.
+
+    Rejects:
+    - External/Slack Connect users  (is_stranger=True)
+    - Bot users                     (is_bot=True)
+    - Deleted accounts              (deleted=True)
+    """
+    if user_id in _user_internal_cache:
+        return _user_internal_cache[user_id]
+    try:
+        info = client.users_info(user=user_id)
+        u = info["user"]
+        result = (
+            not u.get("is_stranger", False)
+            and not u.get("is_bot", False)
+            and not u.get("deleted", False)
+        )
+    except Exception:
+        result = False
+    _user_internal_cache[user_id] = result
+    return result
+
+
+def _is_internal_channel(client, channel_id: str) -> bool:
+    """Return True only if the channel is not shared with an external workspace."""
+    if not channel_id:
+        return True  # DMs / app_home have no channel; allow them
+    if channel_id in _channel_internal_cache:
+        return _channel_internal_cache[channel_id]
+    try:
+        info = client.conversations_info(channel=channel_id)
+        ch = info["channel"]
+        # is_ext_shared — shared via Slack Connect with another org
+        result = not ch.get("is_ext_shared", False)
+    except Exception:
+        result = True  # Fail open for channel lookup errors (e.g. DMs)
+    _channel_internal_cache[channel_id] = result
+    return result
+
+
 def _refresh_home(user_id: str, client) -> None:
     """Re-render the Home tab for a user."""
     view = home.build_home_view(user_id, client)
@@ -78,7 +124,15 @@ def handle_feedback_command(ack, command, client):
     text = command.get("text", "").strip()
     match = re.match(r"<@([A-Z0-9]+)(?:\|[^>]+)?>", text)
     if match:
-        prefill = match.group(1)
+        candidate = match.group(1)
+        if _is_internal_user(client, candidate):
+            prefill = candidate
+        else:
+            client.chat_postMessage(
+                channel=user_id,
+                text=":warning: That user is external to this workspace — feedback can only be given about internal team members.",
+            )
+            return
 
     client.views_open(
         trigger_id=command["trigger_id"],
@@ -145,6 +199,14 @@ def handle_feedback_submit(ack, body, view, client):
         client.chat_postMessage(
             channel=user_id,
             text=":warning: You can't submit feedback about yourself. Use the self-reflection section in your Home tab instead.",
+        )
+        return
+
+    # Reject feedback targeting external/bot/deleted users
+    if not _is_internal_user(client, recipient_id):
+        client.chat_postMessage(
+            channel=user_id,
+            text=":warning: Feedback can only be submitted about internal workspace members.",
         )
         return
 
@@ -261,13 +323,19 @@ def toggle_goal(ack, body, client):
 
 @app.event("app_mention")
 def track_mention_interaction(event, client):
-    """When user A mentions user B, record an interaction for nudge purposes."""
+    """When user A mentions user B, record an interaction for nudge purposes.
+    Only processes internal users in internal (non-Slack-Connect) channels.
+    """
     sender_id = event.get("user")
     text = event.get("text", "")
     channel = event.get("channel")
     week = _iso_week()
 
     if not sender_id:
+        return
+    if not _is_internal_user(client, sender_id):
+        return
+    if not _is_internal_channel(client, channel):
         return
 
     _ensure_user(client, sender_id)
@@ -276,6 +344,8 @@ def track_mention_interaction(event, client):
     for mentioned_id in mentioned:
         if mentioned_id == sender_id:
             continue
+        if not _is_internal_user(client, mentioned_id):
+            continue
         _ensure_user(client, mentioned_id)
         db.record_interaction(sender_id, mentioned_id, channel, week)
         db.record_interaction(mentioned_id, sender_id, channel, week)
@@ -283,8 +353,9 @@ def track_mention_interaction(event, client):
 
 @app.event("message")
 def track_message_interactions(event, client, logger):
-    """Track @mentions in regular channel messages for weekly nudge purposes."""
-    # Skip bot messages, edits, deletes
+    """Track @mentions in internal channel messages for weekly nudge purposes.
+    Skips bot messages, edits, deletes, external users, and Slack Connect channels.
+    """
     if event.get("bot_id") or event.get("subtype"):
         return
 
@@ -295,6 +366,10 @@ def track_message_interactions(event, client, logger):
 
     if not sender_id:
         return
+    if not _is_internal_user(client, sender_id):
+        return
+    if not _is_internal_channel(client, channel):
+        return
 
     mentioned = re.findall(r"<@([A-Z0-9]+)>", text)
     if not mentioned:
@@ -302,6 +377,8 @@ def track_message_interactions(event, client, logger):
 
     for mentioned_id in mentioned:
         if mentioned_id == sender_id:
+            continue
+        if not _is_internal_user(client, mentioned_id):
             continue
         db.record_interaction(sender_id, mentioned_id, channel, week)
         db.record_interaction(mentioned_id, sender_id, channel, week)
@@ -335,6 +412,12 @@ def handle_admin_command(ack, command, client):
             client.chat_postMessage(channel=user_id, text=":warning: Usage: `/feedback-admin set-manager @user @manager`")
             return
         target_user, manager = mentions[0], mentions[1]
+        if not _is_internal_user(client, target_user) or not _is_internal_user(client, manager):
+            client.chat_postMessage(
+                channel=user_id,
+                text=":warning: Both users must be internal workspace members.",
+            )
+            return
         _ensure_user(client, target_user)
         _ensure_user(client, manager)
         db.set_manager(target_user, manager)
