@@ -41,7 +41,7 @@ def feedback_modal(prefill_user_id: str = None, trigger_id: str = None) -> dict:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*{quarter} Feedback* — Your response is anonymous to the recipient.",
+                    "text": f"*{quarter} Feedback* — Only the recipient can see this feedback.",
                 },
             },
             {"type": "divider"},

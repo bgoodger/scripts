@@ -228,7 +228,7 @@ def handle_feedback_submit(ack, body, view, client):
     recipient_name = _get_display_name(client, recipient_id)
     client.chat_postMessage(
         channel=user_id,
-        text=f":white_check_mark: Your feedback about *{recipient_name}* has been submitted anonymously for {quarter}. Thank you!",
+        text=f":white_check_mark: Your feedback about *{recipient_name}* has been submitted for {quarter}. Only they can see it. Thank you!",
     )
 
     logger.info("Feedback submitted by %s for %s in %s", user_id, recipient_id, quarter)

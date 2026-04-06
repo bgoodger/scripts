@@ -153,8 +153,8 @@ def save_feedback(
         return cur.lastrowid
 
 
-def get_feedback_for_user(user_id: str, quarter: str, include_giver: bool = False) -> list:
-    """Return feedback received by user_id. If include_giver=True, include giver info (manager view)."""
+def get_feedback_for_user(user_id: str, quarter: str) -> list:
+    """Return feedback received by user_id, including who gave it."""
     with _get_conn() as conn:
         rows = conn.execute(
             """SELECT f.*, u.name AS giver_name
@@ -168,9 +168,6 @@ def get_feedback_for_user(user_id: str, quarter: str, include_giver: bool = Fals
         for r in rows:
             item = dict(r)
             item["categories"] = json.loads(item["categories"] or "[]")
-            if not include_giver:
-                item.pop("giver_id", None)
-                item.pop("giver_name", None)
             result.append(item)
         return result
 
