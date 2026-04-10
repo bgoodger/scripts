@@ -76,7 +76,7 @@ def build_home_view(user_id: str, slack_client) -> dict:
                 "type": "mrkdwn",
                 "text": (
                     f"Hi *{display_name}* :wave: Here's your feedback dashboard for {quarter}.\n"
-                    "Feedback you receive is *anonymous* — sources are never revealed to you."
+                    "Feedback is private — only you can see what's been submitted about you."
                 ),
             },
             "accessory": _button_action(":arrows_counterclockwise: Refresh summary", "refresh_summary", quarter),
@@ -139,9 +139,10 @@ def build_home_view(user_id: str, slack_client) -> dict:
             cats = ", ".join(item.get("categories") or []) or "General"
             ftype = FEEDBACK_TYPE_LABEL.get(item.get("feedback_type", "both"), "")
             date_str = item.get("created_at", "")[:10]
+            giver = item.get("giver_name") or "Someone"
             blocks.append(
                 _section(
-                    f"*{cats}* · _{ftype}_ · {date_str}\n>{item['content']}"
+                    f"*{cats}* · _{ftype}_ · {date_str} · from *{giver}*\n>{item['content']}"
                 )
             )
     else:

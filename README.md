@@ -7,7 +7,7 @@ Feedback is collected on an ongoing basis (not just at review time), surfaced th
 ## Features
 
 - **`/feedback @person`** — submit structured feedback via a Slack modal at any time
-- **Anonymous by default** — recipients never see who gave feedback; managers see attribution
+- **Private by default** — only the recipient sees their feedback; it is not visible to anyone else
 - **Slack Home tab dashboard** — personal view with AI-generated theme summary, recent feedback, self-reflection editor, and quarterly goals
 - **Weekly nudges** — every Monday the bot DMs you about colleagues you interacted with, prompting you to leave feedback
 - **AI-powered summaries** — Claude extracts recurring themes, strengths, and growth areas from your feedback
@@ -153,9 +153,9 @@ Each piece of feedback is tagged with one or more categories:
 
 | Who | What they can see |
 |---|---|
-| **Recipient** | Feedback content and categories — giver is never shown |
-| **Manager** | Giver attribution (stored in DB, reserved for future manager view) |
+| **Recipient** | Full feedback content, categories, and who gave it |
 | **Giver** | Confirmation that their feedback was submitted |
+| **Anyone else** | Nothing — feedback is private to the recipient only |
 
 All data is stored locally in a SQLite file (`360_feedback.db`). Nothing is sent to external services except feedback text to the Anthropic API for summarisation.
 
